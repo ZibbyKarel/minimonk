@@ -1,0 +1,118 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: minimonk
+      RABBITMQ_DEFAULT_PASS: minimonk
+
+  user-db:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: users
+      POSTGRES_USER: minimonk
+      POSTGRES_PASSWORD: minimonk
+
+  warehouse-db:
+    image: postgres:16-alpine
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: warehouse
+      POSTGRES_USER: minimonk
+      POSTGRES_PASSWORD: minimonk
+
+  order-db:
+    image: postgres:16-alpine
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: minimonk
+      POSTGRES_PASSWORD: minimonk
+
+  user-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.service
+      args:
+        PROJECT: user-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://user-db:5432/users
+    depends_on:
+      - user-db
+    ports:
+      - "8081:8081"
+
+  warehouse-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.service
+      args:
+        PROJECT: warehouse-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://warehouse-db:5432/warehouse
+      SPRING_RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - warehouse-db
+      - rabbitmq
+    ports:
+      - "8082:8082"
+
+  order-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.service
+      args:
+        PROJECT: order-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/orders
+      SPRING_RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - order-db
+      - rabbitmq
+    ports:
+      - "8083:8083"
+
+  payment-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.service
+      args:
+        PROJECT: payment-service
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - rabbitmq
+    ports:
+      - "8084:8084"
+
+  api-gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.service
+      args:
+        PROJECT: api-gateway
+    environment:
+      USER_SERVICE_URL: http://user-service:8081
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:8082
+      ORDER_SERVICE_URL: http://order-service:8083
+    depends_on:
+      - user-service
+      - warehouse-service
+      - order-service
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      - api-gateway
+    ports:
+      - "5173:80"

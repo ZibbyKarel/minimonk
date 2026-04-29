@@ -1,0 +1,24 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: user-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/users}
+    username: ${SPRING_DATASOURCE_USERNAME:minimonk}
+    password: ${SPRING_DATASOURCE_PASSWORD:minimonk}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+minimonk:
+  jwt:
+    issuer: minimonk
+    secret: ${MINIMONK_JWT_SECRET:dev-secret-dev-secret-dev-secret-123456}

@@ -1,0 +1,11 @@
+.gradle/
+build/
+out/
+dist/
+node_modules/
+.DS_Store
+*.log
+*.tsbuildinfo
+
+apps/web/dist/
+apps/web/node_modules/

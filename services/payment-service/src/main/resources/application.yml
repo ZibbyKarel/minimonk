@@ -1,0 +1,21 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: payment-service
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:minimonk}
+    password: ${SPRING_RABBITMQ_PASSWORD:minimonk}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+minimonk:
+  payment:
+    failing-card: "4000000000000002"
