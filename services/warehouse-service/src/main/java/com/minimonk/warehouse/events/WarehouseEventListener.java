@@ -8,6 +8,8 @@ import com.minimonk.events.StockReservedPayload;
 import com.minimonk.warehouse.Product;
 import com.minimonk.warehouse.ProductRepository;
 import com.minimonk.warehouse.config.RabbitConfig;
+import com.minimonk.warehouse.reservation.StockReservation;
+import com.minimonk.warehouse.reservation.StockReservationRepository;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -20,10 +22,12 @@ import java.util.UUID;
 @Component
 public class WarehouseEventListener {
     private final ProductRepository products;
+    private final StockReservationRepository reservations;
     private final RabbitTemplate rabbitTemplate;
 
-    public WarehouseEventListener(ProductRepository products, RabbitTemplate rabbitTemplate) {
+    public WarehouseEventListener(ProductRepository products, StockReservationRepository reservations, RabbitTemplate rabbitTemplate) {
         this.products = products;
+        this.reservations = reservations;
         this.rabbitTemplate = rabbitTemplate;
     }
 
@@ -53,7 +57,10 @@ public class WarehouseEventListener {
                 return;
             }
         }
-        payload.items().forEach(item -> loaded.get(item.productId()).reserve(item.quantity()));
+        payload.items().forEach(item -> {
+            loaded.get(item.productId()).reserve(item.quantity());
+            reservations.save(new StockReservation(payload.orderId(), item.productId(), item.quantity()));
+        });
         publish("stock.reserved", EventEnvelope.create("StockReserved", envelope.traceId(),
                 new StockReservedPayload(payload.orderId(), payload.customerId(), payload.paymentCardNumber())));
     }
@@ -61,6 +68,10 @@ public class WarehouseEventListener {
     @RabbitListener(queues = RabbitConfig.PAYMENT_FAILED_QUEUE)
     @Transactional
     public void onPaymentFailed(EventEnvelope<PaymentResultPayload> envelope) {
+        var stockReservations = reservations.findByOrderId(envelope.payload().orderId());
+        for (var reservation : stockReservations) {
+            products.findById(reservation.getProductId()).ifPresent(product -> product.release(reservation.getQuantity()));
+        }
         publish("stock.released", EventEnvelope.create("StockReleased", envelope.traceId(), envelope.payload()));
     }
 
