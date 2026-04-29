@@ -15,11 +15,14 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/orders")
@@ -35,8 +38,16 @@ public class OrderController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Transactional
-    public CreateOrderResponse create(@Valid @RequestBody CreateOrderRequest request, HttpServletRequest httpRequest) {
-        var order = new CustomerOrder(request.customerId(), request.paymentCardNumber());
+    public CreateOrderResponse create(
+            @Valid @RequestBody CreateOrderRequest request,
+            @RequestHeader(value = "X-Minimonk-User-Id", required = false) UUID authenticatedCustomerId,
+            HttpServletRequest httpRequest
+    ) {
+        var customerId = authenticatedCustomerId != null ? authenticatedCustomerId : request.customerId();
+        if (customerId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "customerId is required when no authenticated user header is present");
+        }
+        var order = new CustomerOrder(customerId, request.paymentCardNumber());
         request.items().forEach(item -> order.addItem(item.productId(), item.sku(), item.name(), item.quantity(), item.unitPrice()));
         orders.save(order);
         var eventItems = order.getItems().stream()

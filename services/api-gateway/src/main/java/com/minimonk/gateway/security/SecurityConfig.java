@@ -57,7 +57,13 @@ public class SecurityConfig {
                         .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
                         .toList();
                 var authentication = new UsernamePasswordAuthenticationToken(claims.getSubject(), token, authorities);
-                return chain.filter(exchange)
+                var request = exchange.getRequest().mutate()
+                        .header("X-Minimonk-User-Id", claims.getSubject())
+                        .header("X-Minimonk-Username", claims.get("username", String.class))
+                        .header("X-Minimonk-Roles", String.join(",", roles))
+                        .build();
+                var authenticatedExchange = exchange.mutate().request(request).build();
+                return chain.filter(authenticatedExchange)
                         .contextWrite(org.springframework.security.core.context.ReactiveSecurityContextHolder.withAuthentication(authentication));
             } catch (RuntimeException ex) {
                 exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
