@@ -438,17 +438,50 @@ Database layout:
 
 For clarity in a training project, prefer one PostgreSQL container per service if resource usage stays reasonable. If startup becomes too heavy, switch to one PostgreSQL container with multiple databases while preserving logical ownership per service.
 
-## Implementation Phases
+## Current Implementation Snapshot
+
+Status after commit `39086f2`:
+
+- The repository skeleton is in place: Gradle multi-project backend, React/Vite frontend, shared libraries, Docker Compose, RabbitMQ, and per-service PostgreSQL containers.
+- The gateway routes `/api/auth/**`, `/api/products/**`, and `/api/orders/**` to the correct services and adds a `traceparent` header when one is missing.
+- `user-service` has seeded demo users, login, password verification, JWT issuing, and OpenAPI exposure.
+- `order-service` and `warehouse-service` now validate JWTs locally with the shared servlet `JwtAuthenticationFilter`, enforce endpoint roles, and reject unauthenticated protected requests.
+- `api-gateway` validates JWT presence and syntax for protected frontend-facing routes, but coarse role checks are currently enforced in downstream services rather than at gateway route level.
+- `warehouse-service` exposes products through DTOs, seeds product data with Flyway, and protects product access for `CUSTOMER`, `WAREHOUSE_OPERATOR`, and `ADMIN`.
+- `order-service` creates orders, publishes `OrderCreated`, exposes order overview DTOs, and uses projection queries for the order list.
+- `warehouse-service`, `payment-service`, and `order-service` implement the asynchronous order flow through RabbitMQ events.
+- Stock reservation uses JPA optimistic locking and a small retry loop.
+- The deterministic failing card path exists through `minimonk.payment.failing-card`.
+- Payment failure releases stock and publishes `StockReleased`; the order service transitions failed payment orders to `CANCELLED` after stock release.
+- The frontend has login, create-order, and orders views using TanStack Query, session storage JWTs, and manual API helpers.
+- Orval is configured, but generated clients/hooks are not committed and the frontend currently uses `apps/web/src/api/manual.ts`.
+- There are currently no project tests.
+
+## Phase Status
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| Phase 1: Project Skeleton And Infrastructure | Mostly done | Structure, Compose, health endpoints, and trace header propagation exist. Still needs clean-start verification and trace-id log verification. |
+| Phase 2: Authentication And Gateway | Mostly done | Login/JWT, gateway validation, and backend service role checks exist. Gateway-level role checks are intentionally deferred or can be re-added if wanted. |
+| Phase 3: Products And OpenAPI/Orval | Partially done | Product API, DTOs, Flyway seed, OpenAPI deps, Orval config, and UI exist. Generated Orval hooks are still missing from the frontend runtime. |
+| Phase 4: Event-Driven Order Flow | Mostly done | Core RabbitMQ flow exists. Needs end-to-end verification, better frontend in-progress polling, and clearer success/failure demo states. |
+| Phase 5: Concurrency And Compensation | Partially done | Optimistic locking, retry, deterministic payment failure, and stock release exist. Needs integration/concurrency tests and idempotency. |
+| Phase 6: Query Optimization And N+1 Demonstration | Partially done | Order overview projection exists. Needs seeded demo data, documentation, and a test or logging-based proof. |
+| Phase 7: Hardening And Demo Polish | Remaining | Tests, dead-letter queues, idempotency, error response polish, README/demo docs, and optional tracing visualization remain. |
+
+## Finalized Implementation Plan
 
 ### Phase 1: Project Skeleton And Infrastructure
 
-- create Gradle multi-project structure
-- add Spring Boot service skeletons
-- add React/Vite frontend skeleton
-- add Docker Compose for all services and infrastructure
-- add health endpoints
-- add basic logging
-- add `traceparent` propagation baseline
+- [x] create Gradle multi-project structure
+- [x] add Spring Boot service skeletons
+- [x] add React/Vite frontend skeleton
+- [x] add Docker Compose for all services and infrastructure
+- [x] add health endpoints
+- [x] add basic logging baseline
+- [x] add `traceparent` propagation baseline through gateway and RabbitMQ publishers
+- [ ] verify the whole stack starts from a clean checkout with Docker Compose
+- [ ] verify trace id appears in useful service logs during an order flow
 
 Done when:
 
@@ -459,12 +492,15 @@ Done when:
 
 ### Phase 2: Authentication And Gateway
 
-- implement demo users in `user-service`
-- implement login endpoint
-- issue JWT tokens with roles
-- configure Spring Security in Gateway
-- route frontend API calls through Gateway
-- protect endpoints by role
+- [x] implement demo users in `user-service`
+- [x] implement login endpoint
+- [x] issue JWT tokens with roles
+- [x] configure Spring Security in Gateway for JWT validation
+- [x] route frontend API calls through Gateway
+- [x] validate JWTs in `order-service` and `warehouse-service`
+- [x] protect service endpoints by role
+- [ ] decide whether gateway should also enforce coarse route-level roles or stay as token validation plus downstream authorization
+- [ ] add tests for unauthenticated and unauthorized access
 
 Done when:
 
@@ -474,12 +510,14 @@ Done when:
 
 ### Phase 3: Products And OpenAPI/Orval
 
-- implement product read API in `warehouse-service`
-- seed products with Flyway
-- expose OpenAPI docs
-- configure Orval in frontend
-- generate TanStack Query hooks
-- build product table and order form
+- [x] implement product read API in `warehouse-service`
+- [x] seed products with Flyway
+- [x] expose OpenAPI docs
+- [x] configure Orval in frontend
+- [ ] generate TanStack Query hooks from OpenAPI
+- [ ] replace manual frontend API helpers with generated Orval hooks where practical
+- [x] build product table and order form
+- [ ] add OpenAPI annotations for auth, role expectations, status codes, and validation errors where useful
 
 Done when:
 
@@ -489,14 +527,18 @@ Done when:
 
 ### Phase 4: Event-Driven Order Flow
 
-- implement order creation in `order-service`
-- publish `OrderCreated`
-- implement warehouse reservation listener
-- publish stock reservation events
-- implement payment listener
-- publish payment result events
-- update order status from events
-- show orders and statuses in frontend
+- [x] implement order creation in `order-service`
+- [x] publish `OrderCreated`
+- [x] implement warehouse reservation listener
+- [x] publish stock reservation events
+- [x] implement payment listener
+- [x] publish payment result events
+- [x] update order status from events
+- [x] show orders and statuses in frontend
+- [ ] add frontend polling/refetch interval while orders are in progress
+- [ ] verify successful order flow end to end through Docker Compose
+- [ ] verify stock reservation failure flow end to end
+- [ ] verify payment failure and stock release flow end to end
 
 Done when:
 
@@ -506,11 +548,14 @@ Done when:
 
 ### Phase 5: Concurrency And Compensation
 
-- add optimistic locking to stock updates
-- handle optimistic lock retries
-- implement deterministic payment failure card
-- release stock after payment failure
-- add integration tests for concurrent reservations
+- [x] add optimistic locking to stock updates
+- [x] handle optimistic lock retries
+- [x] implement deterministic payment failure card
+- [x] release stock after payment failure
+- [ ] make stock release idempotent for duplicate `PaymentFailed` events
+- [ ] add integration tests for concurrent reservations
+- [ ] add integration test for payment failure returning stock to availability
+- [ ] add assertions that failed-payment orders end in `CANCELLED`
 
 Done when:
 
@@ -520,10 +565,11 @@ Done when:
 
 ### Phase 6: Query Optimization And N+1 Demonstration
 
-- implement order overview with DTO projection
-- seed multiple orders and items for one user
-- document the avoided N+1 scenario
-- add test or logging-based demonstration
+- [x] implement order overview with DTO projection
+- [ ] seed multiple orders and items for one user in a demo/test profile
+- [ ] document the avoided N+1 scenario
+- [ ] add test or logging-based demonstration
+- [ ] optionally add Hibernate SQL logging for a demo profile
 
 Done when:
 
@@ -533,12 +579,14 @@ Done when:
 
 ### Phase 7: Hardening And Demo Polish
 
-- add idempotent event handling
-- add dead-letter queues
-- improve error responses
-- add frontend loading/error states
-- add README instructions
-- optionally add Jaeger/OpenTelemetry visualization
+- [ ] add idempotent event handling and event id tracking
+- [ ] add dead-letter queues for poison messages
+- [ ] improve backend validation and error responses
+- [ ] add frontend loading, empty, and error states
+- [ ] add README instructions for local dev, Docker Compose, demo users, and demo scenarios
+- [ ] add focused unit tests for status transitions, stock rules, payment decisions, and JWT helpers
+- [ ] add Testcontainers integration tests for PostgreSQL and RabbitMQ flows
+- [ ] optionally add Jaeger/OpenTelemetry visualization
 
 Done when:
 
@@ -546,10 +594,10 @@ Done when:
 - demo scenarios are documented
 - core flows are covered by tests
 
-## Open Questions
+## Decisions And Open Questions
 
-- Should RabbitMQ exchanges and queues be declared manually in infrastructure config, or automatically by Spring configuration?
-- Should the first version use one PostgreSQL container per service, or one container with multiple databases?
-- Should OpenAPI specs be consumed directly from services, or should API Gateway aggregate them in a later phase?
-- Should random payment failure be added after the deterministic failing card scenario?
-
+- RabbitMQ exchanges and queues are declared automatically by Spring configuration for now.
+- The first version uses one PostgreSQL container per stateful service.
+- Orval should keep consuming OpenAPI specs directly from services during development; gateway aggregation can remain a later enhancement.
+- Random payment failure remains optional. The deterministic failing card is enough for repeatable demos and tests.
+- Gateway authorization strategy remains open: either keep the gateway as token validation only, or restore coarse route-level role checks in addition to service-level authorization.
