@@ -1,5 +1,6 @@
 package com.minimonk.payment.config;
 
+import com.minimonk.events.RabbitEventPublisher;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Queue;
@@ -41,6 +42,11 @@ public class RabbitConfig {
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
         template.setMessageConverter(converter);
         return template;
+    }
+
+    @Bean
+    RabbitEventPublisher rabbitEventPublisher(RabbitTemplate rabbitTemplate) {
+        return new RabbitEventPublisher(rabbitTemplate, EXCHANGE);
     }
 
     @Bean

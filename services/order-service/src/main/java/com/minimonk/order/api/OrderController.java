@@ -3,13 +3,13 @@ package com.minimonk.order.api;
 import com.minimonk.events.EventEnvelope;
 import com.minimonk.events.OrderCreatedPayload;
 import com.minimonk.events.OrderItemPayload;
+import com.minimonk.events.RabbitEventPublisher;
 import com.minimonk.observability.TraceContext;
 import com.minimonk.order.CustomerOrder;
 import com.minimonk.order.CustomerOrderRepository;
 import com.minimonk.order.config.RabbitConfig;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,11 +25,11 @@ import java.util.List;
 @RequestMapping("/orders")
 public class OrderController {
     private final CustomerOrderRepository orders;
-    private final RabbitTemplate rabbitTemplate;
+    private final RabbitEventPublisher events;
 
-    public OrderController(CustomerOrderRepository orders, RabbitTemplate rabbitTemplate) {
+    public OrderController(CustomerOrderRepository orders, RabbitEventPublisher events) {
         this.orders = orders;
-        this.rabbitTemplate = rabbitTemplate;
+        this.events = events;
     }
 
     @PostMapping
@@ -45,7 +45,7 @@ public class OrderController {
         var traceparent = TraceContext.ensureTraceparent(httpRequest.getHeader(TraceContext.TRACEPARENT));
         var event = EventEnvelope.create("OrderCreated", TraceContext.traceId(traceparent),
                 new OrderCreatedPayload(order.getId(), order.getCustomerId(), order.getPaymentCardNumber(), order.getTotalAmount(), eventItems));
-        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "order.created", event);
+        events.publish("order.created", event);
         return new CreateOrderResponse(order.getId(), order.getStatus());
     }
 

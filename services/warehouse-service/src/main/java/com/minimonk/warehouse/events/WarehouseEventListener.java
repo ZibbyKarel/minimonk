@@ -3,6 +3,7 @@ package com.minimonk.warehouse.events;
 import com.minimonk.events.EventEnvelope;
 import com.minimonk.events.OrderCreatedPayload;
 import com.minimonk.events.PaymentResultPayload;
+import com.minimonk.events.RabbitEventPublisher;
 import com.minimonk.events.StockReservationFailedPayload;
 import com.minimonk.events.StockReservedPayload;
 import com.minimonk.warehouse.Product;
@@ -11,7 +12,6 @@ import com.minimonk.warehouse.config.RabbitConfig;
 import com.minimonk.warehouse.reservation.StockReservation;
 import com.minimonk.warehouse.reservation.StockReservationRepository;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,12 +23,12 @@ import java.util.UUID;
 public class WarehouseEventListener {
     private final ProductRepository products;
     private final StockReservationRepository reservations;
-    private final RabbitTemplate rabbitTemplate;
+    private final RabbitEventPublisher events;
 
-    public WarehouseEventListener(ProductRepository products, StockReservationRepository reservations, RabbitTemplate rabbitTemplate) {
+    public WarehouseEventListener(ProductRepository products, StockReservationRepository reservations, RabbitEventPublisher events) {
         this.products = products;
         this.reservations = reservations;
-        this.rabbitTemplate = rabbitTemplate;
+        this.events = events;
     }
 
     @RabbitListener(queues = RabbitConfig.ORDER_CREATED_QUEUE)
@@ -76,6 +76,6 @@ public class WarehouseEventListener {
     }
 
     private void publish(String routingKey, EventEnvelope<?> event) {
-        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, routingKey, event);
+        events.publish(routingKey, event);
     }
 }
