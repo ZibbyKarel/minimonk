@@ -22,3 +22,8 @@ management:
     web:
       exposure:
         include: health,info
+
+minimonk:
+  jwt:
+    issuer: minimonk
+    secret: ${MINIMONK_JWT_SECRET:dev-secret-dev-secret-dev-secret-123456}

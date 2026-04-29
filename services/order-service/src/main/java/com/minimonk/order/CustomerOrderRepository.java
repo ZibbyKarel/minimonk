@@ -20,5 +20,17 @@ public interface CustomerOrderRepository extends JpaRepository<CustomerOrder, UU
             """)
     List<OrderOverviewDto> findOverview();
 
+    @Query("""
+            select new com.minimonk.order.api.OrderOverviewDto(
+                o.id, o.customerId, o.status, o.totalAmount, count(i.id), o.createdAt, o.updatedAt
+            )
+            from CustomerOrder o
+            left join o.items i
+            where o.customerId = :customerId
+            group by o.id, o.customerId, o.status, o.totalAmount, o.createdAt, o.updatedAt
+            order by o.createdAt desc
+            """)
+    List<OrderOverviewDto> findOverviewByCustomerId(UUID customerId);
+
     Optional<CustomerOrder> findById(UUID id);
 }

@@ -11,11 +11,11 @@ import com.minimonk.order.config.RabbitConfig;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -40,12 +40,15 @@ public class OrderController {
     @Transactional
     public CreateOrderResponse create(
             @Valid @RequestBody CreateOrderRequest request,
-            @RequestHeader(value = "X-Minimonk-User-Id", required = false) UUID authenticatedCustomerId,
+            Authentication authentication,
             HttpServletRequest httpRequest
     ) {
-        var customerId = authenticatedCustomerId != null ? authenticatedCustomerId : request.customerId();
+        var customerId = authenticatedCustomerId(authentication);
+        if (hasRole(authentication, "ADMIN") && request.customerId() != null) {
+            customerId = request.customerId();
+        }
         if (customerId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "customerId is required when no authenticated user header is present");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated customer is required");
         }
         var order = new CustomerOrder(customerId, request.paymentCardNumber());
         request.items().forEach(item -> order.addItem(item.productId(), item.sku(), item.name(), item.quantity(), item.unitPrice()));
@@ -61,7 +64,25 @@ public class OrderController {
     }
 
     @GetMapping
-    public List<OrderOverviewDto> list() {
-        return orders.findOverview();
+    public List<OrderOverviewDto> list(Authentication authentication) {
+        if (hasRole(authentication, "ADMIN")) {
+            return orders.findOverview();
+        }
+        return orders.findOverviewByCustomerId(authenticatedCustomerId(authentication));
+    }
+
+    private UUID authenticatedCustomerId(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            return null;
+        }
+        return UUID.fromString(authentication.getName());
+    }
+
+    private boolean hasRole(Authentication authentication, String role) {
+        if (authentication == null) {
+            return false;
+        }
+        return authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_" + role));
     }
 }
