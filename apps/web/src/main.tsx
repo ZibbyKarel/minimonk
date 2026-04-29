@@ -2,7 +2,6 @@ import {
   QueryClient,
   QueryClientProvider,
   useMutation,
-  useQuery,
 } from "@tanstack/react-query";
 import {
   ClipboardList,
@@ -14,16 +13,19 @@ import {
 import React, { useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { useForm } from "react-hook-form";
-import {
-  createOrder,
-  listOrders,
-  listProducts,
-  login,
-  Product,
-} from "./api/manual";
+import { login } from "./api/manual";
+import { useCreate, useList, type OrderOverviewDto } from "./api/orders.gen";
+import { useListProducts, type ProductDto } from "./api/warehouse.gen";
 import "./styles.css";
 
 const queryClient = new QueryClient();
+const IN_PROGRESS_STATUSES = new Set([
+  "CREATED",
+  "STOCK_RESERVED",
+  "PAYMENT_PENDING",
+  "PAYMENT_FAILED",
+  "STOCK_RELEASED",
+]);
 
 function App() {
   const [page, setPage] = useState(
@@ -137,35 +139,46 @@ function CreateOrderPage({
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [paymentCardNumber, setPaymentCardNumber] =
     useState("4242424242424242");
-  const productsQuery = useQuery({
-    queryKey: ["products"],
-    queryFn: listProducts,
-    enabled: Boolean(session.userId),
+  const productsQuery = useListProducts({
+    query: {
+      enabled: Boolean(session.userId),
+    },
   });
-  const mutation = useMutation({
-    mutationFn: () => {
-      const items = (productsQuery.data ?? [])
-        .filter((product) => (quantities[product.id] ?? 0) > 0)
-        .map((product) => ({
-          productId: product.id,
-          sku: product.sku,
-          name: product.name,
-          quantity: quantities[product.id],
-          unitPrice: product.price,
-        }));
-      return createOrder({
-        customerId: session.userId,
+  const mutation = useCreate({
+    mutation: {
+      onSuccess: () => navigate("orders"),
+    },
+  });
+
+  function submit() {
+    const items = (productsQuery.data ?? [])
+      .filter((product) => product.id && (quantities[product.id] ?? 0) > 0)
+      .map((product) => {
+        const id = product.id!;
+        return {
+          productId: id,
+          sku: product.sku ?? "",
+          name: product.name ?? "",
+          quantity: quantities[id] ?? 0,
+          unitPrice: product.price ?? 0,
+        };
+      });
+    mutation.mutate({
+      data: {
+        customerId: session.userId ?? undefined,
         paymentCardNumber,
         items,
-      });
-    },
-    onSuccess: () => navigate("orders"),
-  });
+      },
+    });
+  }
 
   const total = useMemo(
     () =>
       (productsQuery.data ?? []).reduce(
-        (sum, product) => sum + (quantities[product.id] ?? 0) * product.price,
+        (sum, product) =>
+          sum +
+          (product.id ? quantities[product.id] ?? 0 : 0) *
+            (product.price ?? 0),
         0,
       ),
     [productsQuery.data, quantities],
@@ -176,6 +189,12 @@ function CreateOrderPage({
   return (
     <section>
       <h1>Create Order</h1>
+      {productsQuery.isPending && <p className="muted">Loading products...</p>}
+      {productsQuery.error ? (
+        <p className="error">
+          Could not load products: {errorMessage(productsQuery.error)}
+        </p>
+      ) : null}
       <div className="mt-4 overflow-hidden border border-zinc-200 bg-white">
         <table>
           <thead>
@@ -188,22 +207,23 @@ function CreateOrderPage({
             </tr>
           </thead>
           <tbody>
-            {(productsQuery.data ?? []).map((product: Product) => (
+            {(productsQuery.data ?? []).map((product: ProductDto) => (
               <tr key={product.id}>
                 <td>{product.sku}</td>
                 <td>
                   <strong>{product.name}</strong>
                   <span>{product.description}</span>
                 </td>
-                <td>{product.availableQuantity}</td>
-                <td>{money(product.price)}</td>
+                <td>{product.availableQuantity ?? 0}</td>
+                <td>{money(product.price ?? 0)}</td>
                 <td>
                   <input
                     type="number"
                     min="0"
-                    max={product.availableQuantity}
-                    value={quantities[product.id] ?? 0}
+                    max={product.availableQuantity ?? 0}
+                    value={product.id ? quantities[product.id] ?? 0 : 0}
                     onChange={(event) =>
+                      product.id &&
                       setQuantities({
                         ...quantities,
                         [product.id]: Number(event.target.value),
@@ -213,6 +233,11 @@ function CreateOrderPage({
                 </td>
               </tr>
             ))}
+            {productsQuery.data?.length === 0 && (
+              <tr>
+                <td colSpan={5}>No products are available.</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -224,19 +249,30 @@ function CreateOrderPage({
         <strong>Total {money(total)}</strong>
         <button
           className="primary"
-          onClick={() => mutation.mutate()}
+          onClick={submit}
           disabled={mutation.isPending || total <= 0}
         >
           <Send size={18} /> Submit
         </button>
       </div>
-      {mutation.error && <p className="error">{mutation.error.message}</p>}
+      {mutation.error ? (
+        <p className="error">{errorMessage(mutation.error)}</p>
+      ) : null}
     </section>
   );
 }
 
 function OrdersPage() {
-  const ordersQuery = useQuery({ queryKey: ["orders"], queryFn: listOrders });
+  const ordersQuery = useList({
+    query: {
+      refetchInterval: (query) =>
+        query.state.data?.some((order: OrderOverviewDto) =>
+          order.status ? IN_PROGRESS_STATUSES.has(order.status) : false,
+        )
+          ? 2500
+          : false,
+    },
+  });
   return (
     <section>
       <div className="flex items-center justify-between">
@@ -245,6 +281,12 @@ function OrdersPage() {
           <RefreshCw size={18} />
         </button>
       </div>
+      {ordersQuery.isPending && <p className="muted">Loading orders...</p>}
+      {ordersQuery.error ? (
+        <p className="error">
+          Could not load orders: {errorMessage(ordersQuery.error)}
+        </p>
+      ) : null}
       <div className="mt-4 overflow-hidden border border-zinc-200 bg-white">
         <table>
           <thead>
@@ -260,16 +302,25 @@ function OrdersPage() {
             {(ordersQuery.data ?? []).map((order) => (
               <tr key={order.orderId}>
                 <td>
-                  <ClipboardList size={16} /> {order.orderId.slice(0, 8)}
+                  <ClipboardList size={16} /> {order.orderId?.slice(0, 8)}
                 </td>
                 <td>
                   <span className="badge">{order.status}</span>
                 </td>
-                <td>{order.itemCount}</td>
-                <td>{money(order.totalAmount)}</td>
-                <td>{new Date(order.updatedAt).toLocaleTimeString()}</td>
+                <td>{order.itemCount ?? 0}</td>
+                <td>{money(order.totalAmount ?? 0)}</td>
+                <td>
+                  {order.updatedAt
+                    ? new Date(order.updatedAt).toLocaleTimeString()
+                    : ""}
+                </td>
               </tr>
             ))}
+            {ordersQuery.data?.length === 0 && (
+              <tr>
+                <td colSpan={5}>No orders yet.</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -282,6 +333,10 @@ function money(value: number) {
     style: "currency",
     currency: "USD",
   }).format(value);
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Request failed";
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

@@ -4,6 +4,7 @@ import com.minimonk.events.RabbitEventPublisher;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
@@ -28,27 +29,32 @@ public class RabbitConfig {
 
     @Bean
     Queue stockReservedQueue() {
-        return new Queue(STOCK_RESERVED_QUEUE, true);
+        return durableQueue(STOCK_RESERVED_QUEUE);
     }
 
     @Bean
     Queue stockFailedQueue() {
-        return new Queue(STOCK_FAILED_QUEUE, true);
+        return durableQueue(STOCK_FAILED_QUEUE);
     }
 
     @Bean
     Queue paymentSucceededQueue() {
-        return new Queue(PAYMENT_SUCCEEDED_QUEUE, true);
+        return durableQueue(PAYMENT_SUCCEEDED_QUEUE);
     }
 
     @Bean
     Queue paymentFailedQueue() {
-        return new Queue(PAYMENT_FAILED_QUEUE, true);
+        return durableQueue(PAYMENT_FAILED_QUEUE);
     }
 
     @Bean
     Queue stockReleasedQueue() {
-        return new Queue(STOCK_RELEASED_QUEUE, true);
+        return durableQueue(STOCK_RELEASED_QUEUE);
+    }
+
+    @Bean
+    Queue orderDeadLetterQueue() {
+        return new Queue("orders.dead-letter", true);
     }
 
     @Bean
@@ -77,6 +83,11 @@ public class RabbitConfig {
     }
 
     @Bean
+    Binding orderDeadLetterBinding(TopicExchange eventExchange, Queue orderDeadLetterQueue) {
+        return BindingBuilder.bind(orderDeadLetterQueue).to(eventExchange).with("orders.#.dead");
+    }
+
+    @Bean
     Jackson2JsonMessageConverter messageConverter() {
         return new Jackson2JsonMessageConverter();
     }
@@ -99,5 +110,12 @@ public class RabbitConfig {
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(converter);
         return factory;
+    }
+
+    private Queue durableQueue(String name) {
+        return QueueBuilder.durable(name)
+                .deadLetterExchange(EXCHANGE)
+                .deadLetterRoutingKey(name + ".dead")
+                .build();
     }
 }

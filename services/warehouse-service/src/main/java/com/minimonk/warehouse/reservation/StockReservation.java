@@ -16,6 +16,7 @@ public class StockReservation {
     private UUID orderId;
     private UUID productId;
     private int quantity;
+    private boolean released;
 
     protected StockReservation() {
     }
@@ -36,5 +37,13 @@ public class StockReservation {
 
     public int getQuantity() {
         return quantity;
+    }
+
+    public boolean isReleased() {
+        return released;
+    }
+
+    public void markReleased() {
+        this.released = true;
     }
 }

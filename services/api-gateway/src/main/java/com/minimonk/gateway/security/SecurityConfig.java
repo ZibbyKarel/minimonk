@@ -1,19 +1,25 @@
 package com.minimonk.gateway.security;
 
 import com.minimonk.security.JwtSupport;
+import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.List;
 
 @Configuration
 @EnableWebFluxSecurity
@@ -28,7 +34,10 @@ public class SecurityConfig {
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .logout(ServerHttpSecurity.LogoutSpec::disable)
                 .authorizeExchange(auth -> auth
-                        .anyExchange().permitAll())
+                        .pathMatchers("/api/auth/login", "/actuator/health").permitAll()
+                        .pathMatchers("/api/products/**").hasAnyRole("CUSTOMER", "WAREHOUSE_OPERATOR", "ADMIN")
+                        .pathMatchers("/api/orders/**").hasAnyRole("CUSTOMER", "ADMIN")
+                        .anyExchange().authenticated())
                 .addFilterAt(jwtWebFilter(jwtSupport), SecurityWebFiltersOrder.AUTHENTICATION)
                 .build();
     }
@@ -52,8 +61,14 @@ public class SecurityConfig {
                 return exchange.getResponse().setComplete();
             }
             try {
-                jwtSupport.parse(token);
-                return chain.filter(exchange);
+                Claims claims = jwtSupport.parse(token);
+                var roles = roles(claims);
+                var authorities = roles.stream()
+                        .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
+                        .toList();
+                var authentication = new UsernamePasswordAuthenticationToken(claims.getSubject(), token, authorities);
+                return chain.filter(exchange)
+                        .contextWrite(ReactiveSecurityContextHolder.withAuthentication(authentication));
             } catch (RuntimeException ex) {
                 log.warn("JWT validation failed: {}", ex.getMessage());
                 exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
@@ -73,5 +88,11 @@ public class SecurityConfig {
             return null;
         }
         return header.substring(7);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> roles(Claims claims) {
+        var roles = claims.get("roles", List.class);
+        return roles != null ? roles : List.of();
     }
 }

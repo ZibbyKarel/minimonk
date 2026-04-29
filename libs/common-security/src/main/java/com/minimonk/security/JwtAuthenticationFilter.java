@@ -37,8 +37,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     .toList();
             var authentication = new UsernamePasswordAuthenticationToken(claims.getSubject(), null, authorities);
             SecurityContextHolder.getContext().setAuthentication(authentication);
-            filterChain.doFilter(request, response);
+            try {
+                filterChain.doFilter(request, response);
+            } finally {
+                SecurityContextHolder.clearContext();
+            }
         } catch (RuntimeException ex) {
+            SecurityContextHolder.clearContext();
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         }
     }

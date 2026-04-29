@@ -4,6 +4,7 @@ import com.minimonk.events.RabbitEventPublisher;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
@@ -24,12 +25,22 @@ public class RabbitConfig {
 
     @Bean
     Queue stockReservedQueue() {
-        return new Queue(STOCK_RESERVED_QUEUE, true);
+        return durableQueue(STOCK_RESERVED_QUEUE);
+    }
+
+    @Bean
+    Queue paymentDeadLetterQueue() {
+        return new Queue("payments.dead-letter", true);
     }
 
     @Bean
     Binding stockReservedBinding(TopicExchange eventExchange, Queue stockReservedQueue) {
         return BindingBuilder.bind(stockReservedQueue).to(eventExchange).with("stock.reserved");
+    }
+
+    @Bean
+    Binding paymentDeadLetterBinding(TopicExchange eventExchange, Queue paymentDeadLetterQueue) {
+        return BindingBuilder.bind(paymentDeadLetterQueue).to(eventExchange).with("payments.#.dead");
     }
 
     @Bean
@@ -55,5 +66,12 @@ public class RabbitConfig {
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(converter);
         return factory;
+    }
+
+    private Queue durableQueue(String name) {
+        return QueueBuilder.durable(name)
+                .deadLetterExchange(EXCHANGE)
+                .deadLetterRoutingKey(name + ".dead")
+                .build();
     }
 }

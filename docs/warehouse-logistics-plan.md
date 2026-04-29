@@ -446,28 +446,30 @@ Status after commit `39086f2`:
 - The gateway routes `/api/auth/**`, `/api/products/**`, and `/api/orders/**` to the correct services and adds a `traceparent` header when one is missing.
 - `user-service` has seeded demo users, login, password verification, JWT issuing, and OpenAPI exposure.
 - `order-service` and `warehouse-service` now validate JWTs locally with the shared servlet `JwtAuthenticationFilter`, enforce endpoint roles, and reject unauthenticated protected requests.
-- `api-gateway` validates JWT presence and syntax for protected frontend-facing routes, but coarse role checks are currently enforced in downstream services rather than at gateway route level.
+- `api-gateway` validates JWTs and enforces coarse route-level roles for products and orders; downstream services still enforce their own endpoint roles.
 - `warehouse-service` exposes products through DTOs, seeds product data with Flyway, and protects product access for `CUSTOMER`, `WAREHOUSE_OPERATOR`, and `ADMIN`.
 - `order-service` creates orders, publishes `OrderCreated`, exposes order overview DTOs, and uses projection queries for the order list.
 - `warehouse-service`, `payment-service`, and `order-service` implement the asynchronous order flow through RabbitMQ events.
 - Stock reservation uses JPA optimistic locking and a small retry loop.
 - The deterministic failing card path exists through `minimonk.payment.failing-card`.
 - Payment failure releases stock and publishes `StockReleased`; the order service transitions failed payment orders to `CANCELLED` after stock release.
-- The frontend has login, create-order, and orders views using TanStack Query, session storage JWTs, and manual API helpers.
-- Orval is configured, but generated clients/hooks are not committed and the frontend currently uses `apps/web/src/api/manual.ts`.
+- The frontend has login, create-order, and orders views using TanStack Query, session storage JWTs, Orval-generated product/order hooks, in-progress order polling, and basic loading/empty/error states.
+- RabbitMQ listener queues have dead-letter routing.
+- `order-service` and `warehouse-service` persist processed event ids for idempotent event handling; `payment-service` suppresses duplicate payment decisions in process memory.
+- Orval is configured and generated product/order clients are committed; login remains a small manual helper.
 - There are currently no project tests.
 
 ## Phase Status
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Phase 1: Project Skeleton And Infrastructure | Mostly done | Structure, Compose, health endpoints, and trace header propagation exist. Still needs clean-start verification and trace-id log verification. |
-| Phase 2: Authentication And Gateway | Mostly done | Login/JWT, gateway validation, and backend service role checks exist. Gateway-level role checks are intentionally deferred or can be re-added if wanted. |
-| Phase 3: Products And OpenAPI/Orval | Partially done | Product API, DTOs, Flyway seed, OpenAPI deps, Orval config, and UI exist. Generated Orval hooks are still missing from the frontend runtime. |
-| Phase 4: Event-Driven Order Flow | Mostly done | Core RabbitMQ flow exists. Needs end-to-end verification, better frontend in-progress polling, and clearer success/failure demo states. |
-| Phase 5: Concurrency And Compensation | Partially done | Optimistic locking, retry, deterministic payment failure, and stock release exist. Needs integration/concurrency tests and idempotency. |
+| Phase 1: Project Skeleton And Infrastructure | Mostly done | Structure, Compose, health endpoints, and trace header propagation exist. Docker Compose startup was verified; trace-id log verification remains. |
+| Phase 2: Authentication And Gateway | Mostly done | Login/JWT, gateway route role checks, and backend service role checks exist. Needs automated security tests. |
+| Phase 3: Products And OpenAPI/Orval | Mostly done | Product API, DTOs, Flyway seed, OpenAPI deps, Orval generation, and generated frontend hooks exist. Optional richer OpenAPI annotations remain. |
+| Phase 4: Event-Driven Order Flow | Mostly done | Core RabbitMQ flow and frontend polling exist. Needs end-to-end verification and clearer success/failure demo states. |
+| Phase 5: Concurrency And Compensation | Partially done | Optimistic locking, retry, deterministic payment failure, idempotency, and stock release exist. Needs integration/concurrency tests. |
 | Phase 6: Query Optimization And N+1 Demonstration | Partially done | Order overview projection exists. Needs seeded demo data, documentation, and a test or logging-based proof. |
-| Phase 7: Hardening And Demo Polish | Remaining | Tests, dead-letter queues, idempotency, error response polish, README/demo docs, and optional tracing visualization remain. |
+| Phase 7: Hardening And Demo Polish | In progress | Unit tests, dead-letter queues, idempotency, README/demo docs, and frontend states exist. Integration tests, richer error responses, and optional tracing visualization remain. |
 
 ## Finalized Implementation Plan
 
@@ -480,7 +482,7 @@ Status after commit `39086f2`:
 - [x] add health endpoints
 - [x] add basic logging baseline
 - [x] add `traceparent` propagation baseline through gateway and RabbitMQ publishers
-- [ ] verify the whole stack starts from a clean checkout with Docker Compose
+- [x] verify the whole stack starts with Docker Compose
 - [ ] verify trace id appears in useful service logs during an order flow
 
 Done when:
@@ -499,7 +501,7 @@ Done when:
 - [x] route frontend API calls through Gateway
 - [x] validate JWTs in `order-service` and `warehouse-service`
 - [x] protect service endpoints by role
-- [ ] decide whether gateway should also enforce coarse route-level roles or stay as token validation plus downstream authorization
+- [x] enforce coarse route-level roles at the gateway
 - [ ] add tests for unauthenticated and unauthorized access
 
 Done when:
@@ -514,8 +516,8 @@ Done when:
 - [x] seed products with Flyway
 - [x] expose OpenAPI docs
 - [x] configure Orval in frontend
-- [ ] generate TanStack Query hooks from OpenAPI
-- [ ] replace manual frontend API helpers with generated Orval hooks where practical
+- [x] generate TanStack Query hooks from OpenAPI
+- [x] replace manual product/order frontend API helpers with generated Orval hooks
 - [x] build product table and order form
 - [ ] add OpenAPI annotations for auth, role expectations, status codes, and validation errors where useful
 
@@ -535,7 +537,7 @@ Done when:
 - [x] publish payment result events
 - [x] update order status from events
 - [x] show orders and statuses in frontend
-- [ ] add frontend polling/refetch interval while orders are in progress
+- [x] add frontend polling/refetch interval while orders are in progress
 - [ ] verify successful order flow end to end through Docker Compose
 - [ ] verify stock reservation failure flow end to end
 - [ ] verify payment failure and stock release flow end to end
@@ -552,7 +554,7 @@ Done when:
 - [x] handle optimistic lock retries
 - [x] implement deterministic payment failure card
 - [x] release stock after payment failure
-- [ ] make stock release idempotent for duplicate `PaymentFailed` events
+- [x] make stock release idempotent for duplicate `PaymentFailed` events
 - [ ] add integration tests for concurrent reservations
 - [ ] add integration test for payment failure returning stock to availability
 - [ ] add assertions that failed-payment orders end in `CANCELLED`
@@ -579,12 +581,12 @@ Done when:
 
 ### Phase 7: Hardening And Demo Polish
 
-- [ ] add idempotent event handling and event id tracking
-- [ ] add dead-letter queues for poison messages
+- [x] add idempotent event handling and event id tracking
+- [x] add dead-letter queues for poison messages
 - [ ] improve backend validation and error responses
-- [ ] add frontend loading, empty, and error states
-- [ ] add README instructions for local dev, Docker Compose, demo users, and demo scenarios
-- [ ] add focused unit tests for status transitions, stock rules, payment decisions, and JWT helpers
+- [x] add frontend loading, empty, and error states
+- [x] add README instructions for local dev, Docker Compose, demo users, and demo scenarios
+- [x] add focused unit tests for status transitions, stock rules, payment decisions, and JWT helpers
 - [ ] add Testcontainers integration tests for PostgreSQL and RabbitMQ flows
 - [ ] optionally add Jaeger/OpenTelemetry visualization
 
@@ -600,4 +602,4 @@ Done when:
 - The first version uses one PostgreSQL container per stateful service.
 - Orval should keep consuming OpenAPI specs directly from services during development; gateway aggregation can remain a later enhancement.
 - Random payment failure remains optional. The deterministic failing card is enough for repeatable demos and tests.
-- Gateway authorization strategy remains open: either keep the gateway as token validation only, or restore coarse route-level role checks in addition to service-level authorization.
+- Gateway authorization strategy is defense in depth: the gateway performs coarse route-level role checks and services retain local authorization.

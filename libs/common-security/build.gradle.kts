@@ -10,4 +10,6 @@ dependencies {
     compileOnly("org.springframework:spring-web:6.1.14")
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
+    testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.5")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.5")
 }

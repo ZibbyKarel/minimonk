@@ -4,6 +4,7 @@ import com.minimonk.events.RabbitEventPublisher;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
@@ -25,12 +26,17 @@ public class RabbitConfig {
 
     @Bean
     Queue orderCreatedQueue() {
-        return new Queue(ORDER_CREATED_QUEUE, true);
+        return durableQueue(ORDER_CREATED_QUEUE);
     }
 
     @Bean
     Queue paymentFailedQueue() {
-        return new Queue(PAYMENT_FAILED_QUEUE, true);
+        return durableQueue(PAYMENT_FAILED_QUEUE);
+    }
+
+    @Bean
+    Queue warehouseDeadLetterQueue() {
+        return new Queue("warehouse.dead-letter", true);
     }
 
     @Bean
@@ -41,6 +47,11 @@ public class RabbitConfig {
     @Bean
     Binding paymentFailedBinding(TopicExchange eventExchange, Queue paymentFailedQueue) {
         return BindingBuilder.bind(paymentFailedQueue).to(eventExchange).with("payment.failed");
+    }
+
+    @Bean
+    Binding warehouseDeadLetterBinding(TopicExchange eventExchange, Queue warehouseDeadLetterQueue) {
+        return BindingBuilder.bind(warehouseDeadLetterQueue).to(eventExchange).with("warehouse.#.dead");
     }
 
     @Bean
@@ -66,5 +77,12 @@ public class RabbitConfig {
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(converter);
         return factory;
+    }
+
+    private Queue durableQueue(String name) {
+        return QueueBuilder.durable(name)
+                .deadLetterExchange(EXCHANGE)
+                .deadLetterRoutingKey(name + ".dead")
+                .build();
     }
 }

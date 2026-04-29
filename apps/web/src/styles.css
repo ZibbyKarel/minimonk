@@ -41,3 +41,7 @@ td span {
 .error {
   @apply text-sm font-medium text-red-700;
 }
+
+.muted {
+  @apply mt-3 text-sm text-zinc-600;
+}

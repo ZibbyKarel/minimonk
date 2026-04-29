@@ -1,6 +1,6 @@
 package com.minimonk.warehouse.api;
 
-import com.minimonk.warehouse.ProductRepository;
+import com.minimonk.warehouse.ProductService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -10,23 +10,14 @@ import java.util.List;
 @RestController
 @RequestMapping("/products")
 public class ProductController {
-    private final ProductRepository products;
+    private final ProductService productService;
 
-    public ProductController(ProductRepository products) {
-        this.products = products;
+    public ProductController(ProductService productService) {
+        this.productService = productService;
     }
 
     @GetMapping
     public List<ProductDto> listProducts() {
-        return products.findAll().stream()
-                .map(product -> new ProductDto(
-                        product.getId(),
-                        product.getSku(),
-                        product.getName(),
-                        product.getDescription(),
-                        product.getPrice(),
-                        product.getAvailableQuantity(),
-                        product.getReservedQuantity()))
-                .toList();
+        return productService.listProducts();
     }
 }

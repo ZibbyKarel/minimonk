@@ -9,10 +9,15 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
 @Component
 public class PaymentListener {
     private final RabbitEventPublisher events;
     private final String failingCard;
+    private final Set<UUID> processedEvents = ConcurrentHashMap.newKeySet();
 
     public PaymentListener(RabbitEventPublisher events, @Value("${minimonk.payment.failing-card}") String failingCard) {
         this.events = events;
@@ -21,6 +26,9 @@ public class PaymentListener {
 
     @RabbitListener(queues = RabbitConfig.STOCK_RESERVED_QUEUE)
     public void onStockReserved(EventEnvelope<StockReservedPayload> envelope) {
+        if (!processedEvents.add(envelope.eventId())) {
+            return;
+        }
         var payload = envelope.payload();
         if (failingCard.equals(payload.paymentCardNumber())) {
             publish("payment.failed", EventEnvelope.create("PaymentFailed", envelope.traceId(),
